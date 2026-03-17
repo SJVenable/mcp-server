@@ -16,6 +16,9 @@ import (
 	filteredinformerfactory "knative.dev/pkg/client/injection/kube/informers/factory/filtered"
 	"knative.dev/pkg/injection"
 	"knative.dev/pkg/signals"
+
+	// Import OIDC auth plugin for cicsk8s authentication
+	_ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
 )
 
 // ManagedByLabelKey is the label key used to mark what is managing this resource
@@ -24,8 +27,10 @@ const ManagedByLabelKey = "app.kubernetes.io/managed-by"
 func main() {
 	var transport string
 	var httpAddr string
+	var namespace string
 	flag.StringVar(&transport, "transport", "http", "Transport type (stdio or http)")
 	flag.StringVar(&httpAddr, "address", ":8080", "Address to bind the HTTP server to")
+	flag.StringVar(&namespace, "namespace", "cip-dev", "Kubernetes namespace to watch (defaults to namespace from kubeconfig)")
 	flag.Parse()
 
 	if httpAddr == "" && transport == "http" {
@@ -41,6 +46,13 @@ func main() {
 	// Load kubernetes configuration
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	configOverrides := &clientcmd.ConfigOverrides{}
+
+	// Override namespace if specified
+	if namespace != "" {
+		configOverrides.Context.Namespace = namespace
+		slog.Info(fmt.Sprintf("Using namespace: %s", namespace))
+	}
+
 	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
 	cfg, err := kubeConfig.ClientConfig()
 	if err != nil {
@@ -48,11 +60,26 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Get the actual namespace that will be used
+	actualNamespace, _, err := kubeConfig.Namespace()
+	if err != nil {
+		slog.Error(fmt.Sprintf("❌ Failed to get namespace from config: %v", err))
+		os.Exit(1)
+	}
+	slog.Info(fmt.Sprintf("✅ Using namespace: %s", actualNamespace))
+	slog.Info(fmt.Sprintf("📡 Kubernetes API server: %s", cfg.Host))
+
+	// CRITICAL: Set namespace in context for injection system
+	// The injection system needs the namespace in the context, not just in the config
+	ctx = injection.WithNamespaceScope(ctx, actualNamespace)
+	slog.Info(fmt.Sprintf("🎯 Injection system configured for namespace: %s", actualNamespace))
+
 	// Start informers through knative injection functions (in context)
 	ctx = filteredinformerfactory.WithSelectors(ctx, ManagedByLabelKey)
-	// slog.Info("Registering %d informer factories", len(injection.Default.GetInformerFactories()))
-	// slog.Info("Registering %d informers", len(injection.Default.GetInformers()))
+	slog.Info(fmt.Sprintf("🔍 Informer filter: %s", ManagedByLabelKey))
+
 	ctx, startInformers := injection.EnableInjectionOrDie(ctx, cfg)
+	slog.Info("✅ Injection system initialized")
 
 	// Start the injection clients and informers.
 	startInformers()

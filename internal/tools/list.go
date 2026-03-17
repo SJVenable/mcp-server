@@ -68,7 +68,7 @@ func handlerListTasks(
 	var trs []*v1.Task
 
 	if namespace == "" {
-		// No namespace, searching all PipelineRuns
+		// No namespace, searching all Tasks
 		trs, err = taskInformer.Lister().List(selector)
 		if err != nil {
 			return nil, err
@@ -85,7 +85,31 @@ func handlerListTasks(
 		trs = filterList(trs, prefix)
 	}
 
-	jsonData, err := json.Marshal(trs)
+	// Create a concise summary to avoid context overflow
+	type taskSummary struct {
+		Name      string            `json:"name"`
+		Namespace string            `json:"namespace"`
+		Labels    map[string]string `json:"labels,omitempty"`
+		StepCount int               `json:"stepCount"`
+		Created   string            `json:"created"`
+	}
+
+	summaries := make([]taskSummary, 0, len(trs))
+	for _, tr := range trs {
+		stepCount := 0
+		if tr.Spec.Steps != nil {
+			stepCount = len(tr.Spec.Steps)
+		}
+		summaries = append(summaries, taskSummary{
+			Name:      tr.Name,
+			Namespace: tr.Namespace,
+			Labels:    tr.Labels,
+			StepCount: stepCount,
+			Created:   tr.CreationTimestamp.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	jsonData, err := json.Marshal(summaries)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal resource to JSON: %w", err)
 	}
@@ -119,7 +143,7 @@ func handlerListTaskRuns(
 	var trs []*v1.TaskRun
 
 	if namespace == "" {
-		// No namespace, searching all PipelineRuns
+		// No namespace, searching all TaskRuns
 		trs, err = taskRunInformer.Lister().List(selector)
 		if err != nil {
 			return nil, err
@@ -136,7 +160,54 @@ func handlerListTaskRuns(
 		trs = filterList(trs, prefix)
 	}
 
-	jsonData, err := json.Marshal(trs)
+	// Create a concise summary to avoid context overflow
+	type taskRunSummary struct {
+		Name           string            `json:"name"`
+		Namespace      string            `json:"namespace"`
+		Labels         map[string]string `json:"labels,omitempty"`
+		TaskRef        string            `json:"taskRef,omitempty"`
+		Status         string            `json:"status"`
+		StartTime      string            `json:"startTime,omitempty"`
+		CompletionTime string            `json:"completionTime,omitempty"`
+	}
+
+	summaries := make([]taskRunSummary, 0, len(trs))
+	for _, tr := range trs {
+		taskRef := ""
+		if tr.Spec.TaskRef != nil {
+			taskRef = tr.Spec.TaskRef.Name
+		}
+
+		status := "Unknown"
+		if len(tr.Status.Conditions) > 0 {
+			status = string(tr.Status.Conditions[0].Status)
+			if tr.Status.Conditions[0].Reason != "" {
+				status = tr.Status.Conditions[0].Reason
+			}
+		}
+
+		startTime := ""
+		if tr.Status.StartTime != nil {
+			startTime = tr.Status.StartTime.Format("2006-01-02 15:04:05")
+		}
+
+		completionTime := ""
+		if tr.Status.CompletionTime != nil {
+			completionTime = tr.Status.CompletionTime.Format("2006-01-02 15:04:05")
+		}
+
+		summaries = append(summaries, taskRunSummary{
+			Name:           tr.Name,
+			Namespace:      tr.Namespace,
+			Labels:         tr.Labels,
+			TaskRef:        taskRef,
+			Status:         status,
+			StartTime:      startTime,
+			CompletionTime: completionTime,
+		})
+	}
+
+	jsonData, err := json.Marshal(summaries)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal resource to JSON: %w", err)
 	}
@@ -170,7 +241,7 @@ func handlerListStepactions(
 	var trs []*v1beta1.StepAction
 
 	if namespace == "" {
-		// No namespace, searching all PipelineRuns
+		// No namespace, searching all StepActions
 		trs, err = stepactionInformer.Lister().List(selector)
 		if err != nil {
 			return nil, err
@@ -187,7 +258,31 @@ func handlerListStepactions(
 		trs = filterList(trs, prefix)
 	}
 
-	jsonData, err := json.Marshal(trs)
+	// Create a concise summary to avoid context overflow
+	type stepActionSummary struct {
+		Name      string            `json:"name"`
+		Namespace string            `json:"namespace"`
+		Labels    map[string]string `json:"labels,omitempty"`
+		Image     string            `json:"image,omitempty"`
+		Created   string            `json:"created"`
+	}
+
+	summaries := make([]stepActionSummary, 0, len(trs))
+	for _, tr := range trs {
+		image := ""
+		if tr.Spec.Image != "" {
+			image = tr.Spec.Image
+		}
+		summaries = append(summaries, stepActionSummary{
+			Name:      tr.Name,
+			Namespace: tr.Namespace,
+			Labels:    tr.Labels,
+			Image:     image,
+			Created:   tr.CreationTimestamp.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	jsonData, err := json.Marshal(summaries)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal resource to JSON: %w", err)
 	}
@@ -238,7 +333,31 @@ func handlerListPipelines(
 		prs = filterList(prs, prefix)
 	}
 
-	jsonData, err := json.Marshal(prs)
+	// Create a concise summary to avoid context overflow
+	type pipelineSummary struct {
+		Name      string            `json:"name"`
+		Namespace string            `json:"namespace"`
+		Labels    map[string]string `json:"labels,omitempty"`
+		TaskCount int               `json:"taskCount"`
+		Created   string            `json:"created"`
+	}
+
+	summaries := make([]pipelineSummary, 0, len(prs))
+	for _, pr := range prs {
+		taskCount := 0
+		if pr.Spec.Tasks != nil {
+			taskCount = len(pr.Spec.Tasks)
+		}
+		summaries = append(summaries, pipelineSummary{
+			Name:      pr.Name,
+			Namespace: pr.Namespace,
+			Labels:    pr.Labels,
+			TaskCount: taskCount,
+			Created:   pr.CreationTimestamp.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	jsonData, err := json.Marshal(summaries)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal resource to JSON: %w", err)
 	}
@@ -289,7 +408,54 @@ func handlerListPipelineRuns(
 		prs = filterList(prs, prefix)
 	}
 
-	jsonData, err := json.Marshal(prs)
+	// Create a concise summary to avoid context overflow
+	type pipelineRunSummary struct {
+		Name           string            `json:"name"`
+		Namespace      string            `json:"namespace"`
+		Labels         map[string]string `json:"labels,omitempty"`
+		PipelineRef    string            `json:"pipelineRef,omitempty"`
+		Status         string            `json:"status"`
+		StartTime      string            `json:"startTime,omitempty"`
+		CompletionTime string            `json:"completionTime,omitempty"`
+	}
+
+	summaries := make([]pipelineRunSummary, 0, len(prs))
+	for _, pr := range prs {
+		pipelineRef := ""
+		if pr.Spec.PipelineRef != nil {
+			pipelineRef = pr.Spec.PipelineRef.Name
+		}
+
+		status := "Unknown"
+		if len(pr.Status.Conditions) > 0 {
+			status = string(pr.Status.Conditions[0].Status)
+			if pr.Status.Conditions[0].Reason != "" {
+				status = pr.Status.Conditions[0].Reason
+			}
+		}
+
+		startTime := ""
+		if pr.Status.StartTime != nil {
+			startTime = pr.Status.StartTime.Format("2006-01-02 15:04:05")
+		}
+
+		completionTime := ""
+		if pr.Status.CompletionTime != nil {
+			completionTime = pr.Status.CompletionTime.Format("2006-01-02 15:04:05")
+		}
+
+		summaries = append(summaries, pipelineRunSummary{
+			Name:           pr.Name,
+			Namespace:      pr.Namespace,
+			Labels:         pr.Labels,
+			PipelineRef:    pipelineRef,
+			Status:         status,
+			StartTime:      startTime,
+			CompletionTime: completionTime,
+		})
+	}
+
+	jsonData, err := json.Marshal(summaries)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal resource to JSON: %w", err)
 	}
